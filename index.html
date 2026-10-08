@@ -59,7 +59,7 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)
 tr:last-child td{border-bottom:0}td.n{text-align:right;font-variant-numeric:tabular-nums}
 .wrap{overflow-x:auto}
 .agenda{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-.aglist{max-height:340px;overflow:auto;margin:10px 0 4px}
+.aglist{margin:10px 0 4px}
 .agday{padding:6px 0;border-top:1px solid var(--line)}.agday:first-child{border-top:0}
 .agd{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);font-weight:600;margin-bottom:2px}
 .agd.hoje{color:var(--acc2)}
@@ -69,6 +69,12 @@ tr:last-child td{border-bottom:0}td.n{text-align:right;font-variant-numeric:tabu
 .agm{border:0}.agm:hover{filter:brightness(.92)}
 .agx{width:24px;flex:none;border:0;background:none;color:var(--mut);padding:0}
 button.agx:hover{color:#c0392b}
+.fontes{display:flex;flex-direction:column;gap:6px;align-items:flex-start;border-top:1px solid var(--line);padding:10px 0 4px;font-size:12px;color:var(--mut)}
+.fbtn{padding:5px 12px;font-size:13px}
+.lnk{background:none;border:0;color:var(--acc2);padding:0 0 0 8px;font-size:12px;font-weight:600}
+.sbform{display:flex;flex-direction:column;gap:10px}
+.sbform label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600}
+.sbform input{font:inherit;font-weight:400;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .agform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:12px;margin-top:6px}
 .agform input,.agform select{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:0}
 .agform #agT{flex:2;min-width:160px}.agform #agL{flex:1;min-width:120px}
@@ -89,7 +95,15 @@ button.agx:hover{color:#c0392b}
 #dlg.on{display:grid}
 #dlg .box{max-width:460px}
 #dlg h3{margin:0 0 4px;font-size:17px}
+@media(min-width:761px){
+ #edge{display:none}
+ body.autohide #side{position:fixed;left:0;top:0;bottom:0;z-index:40;transform:translateX(-100%);transition:transform .18s ease;box-shadow:6px 0 24px rgba(0,0,0,.28)}
+ body.autohide.peek #side{transform:none}
+ body.autohide #edge{display:block;position:fixed;left:0;top:0;bottom:0;width:12px;z-index:39;background:linear-gradient(90deg,var(--side) 0 4px,transparent 4px)}
+}
+@media(prefers-reduced-motion:reduce){body.autohide #side{transition:none}}
 @media(max-width:760px){
+ #edge{display:none}
  body{flex-direction:column-reverse}
  #side{width:auto;flex-direction:row;padding:4px 6px calc(4px + env(safe-area-inset-bottom));align-items:stretch}
  .brand,.navlab,.sidefoot{display:none}
@@ -108,6 +122,7 @@ button.agx:hover{color:#c0392b}
  <div id="nav"></div>
  <div class="sidefoot" id="foot"></div>
 </aside>
+<div id="edge" aria-hidden="true"></div>
 <main id="stage">
  <section class="view" id="v-home"></section>
  <section class="view" id="v-empty"></section>
@@ -202,7 +217,7 @@ async function go(id){
  document.querySelectorAll('#stage .view, #stage > iframe, #stage .sites').forEach(el => el.classList.remove('on'));
  navHtml();
  document.title = (m ? m.nome + ' · ' : '') + 'Hugocnamaral';
- if(!m){ renderHome(); $('#v-home').classList.add('on'); return; }
+ if(!m){ renderHome(); $('#v-home').classList.add('on'); sincronizarAgendas(false); return; }
  if(!disponivel(m)){ renderEmpty(m); $('#v-empty').classList.add('on'); return; }
  if(m.sites){ renderSites(m); $('#v-sites').classList.add('on'); ls.set('hcaLast_'+id, new Date().toISOString()); return; }
  if(m.id === 'tenis' && !frames.tenis) await prepararTenis();
@@ -226,6 +241,97 @@ const maisMeses = (iso,n) => { const d = new Date(iso+'T00:00:00'); const dia = 
 const lerJSON = (k,def) => { try{ const v = JSON.parse(ls.get(k)||'null'); return v==null?def:v; }catch(e){ return def; } };
 const agProprias = () => { const a = lerJSON('hcaAgenda',[]); return Array.isArray(a)?a:[]; };
 let agPassadas = false, agMsg = '';
+// expande eventos no formato das apps ERP (Htennis, ERP MobilWave, MobilWave Espanha), incluindo repetições
+function agAddEventos(add, lista, base, ate){
+ const isoOk = d => /^\d{4}-\d\d-\d\d/.test(d||'');
+ (Array.isArray(lista)?lista:[]).forEach(e => {
+  if(!isoOk(e.date)) return;
+  const b = Object.assign({hora:e.allDay?'':(e.startTime||''), titulo:e.titulo||'(sem título)', local:e.local||''}, base);
+  const rep = e.repeat && e.repeat !== 'none' ? e.repeat : null;
+  if(!rep){ add(Object.assign({data:e.date}, b)); return; }
+  const fim = isoOk(e.repeatUntil) ? e.repeatUntil : maisMeses(e.date,12);
+  let cur = e.date, n = 0;
+  while(cur <= fim && cur <= ate && n < 400){ n++; add(Object.assign({data:cur}, b));
+   cur = rep === 'semanal' ? maisDias(cur,7) : rep === 'quinzenal' ? maisDias(cur,14) : rep === 'mensal' ? maisMeses(e.date,n) : maisDias(fim,1); }
+ });
+}
+
+// ===== Agendas do ERP MobilWave e da MobilWave Espanha (Supabase, só leitura) =====
+const FONTES = [
+ {id:'erp', nome:'ERP MobilWave', site:'erp', url:'https://kmqdrxkutuyiqrpfepug.supabase.co', key:'sb_publishable_KJs_04EvyGDR856v0pBWeQ_wxT7GRB7'},
+ {id:'es',  nome:'MobilWave Espanha', site:'es', url:'https://djneppkigntlhdmkgwfu.supabase.co', key:'sb_publishable_DxChLb8LNo0IAI6jb10DIQ_6MZx_p4z'}
+];
+const sbSess = id => lerJSON('hcaSb_'+id, null);
+const agErr = {}, agSync = {};
+async function sbAuth(f, body, grant){
+ const r = await fetch(f.url+'/auth/v1/token?grant_type='+grant, {method:'POST', headers:{apikey:f.key, 'Content-Type':'application/json'}, body:JSON.stringify(body)});
+ const j = await r.json().catch(() => ({}));
+ if(!r.ok){ const m = j.error_description || j.msg || j.message || ('Erro '+r.status); throw new Error(/invalid login/i.test(m) ? 'Email ou palavra-passe errados.' : m); }
+ const s = Object.assign(sbSess(f.id) || {}, {access:j.access_token, refresh:j.refresh_token, exp:Date.now() + (j.expires_in||3600)*1000 - 60000, uid:j.user && j.user.id, email:(j.user && j.user.email) || body.email});
+ ls.set('hcaSb_'+f.id, JSON.stringify(s)); return s;
+}
+async function sbToken(f){ let s = sbSess(f.id); if(!s) throw new Error('Sem sessão.'); if(Date.now() > s.exp) s = await sbAuth(f, {refresh_token:s.refresh}, 'refresh_token'); return s; }
+async function sbGet(f, s, path){
+ const r = await fetch(f.url+'/rest/v1/'+path, {headers:{apikey:f.key, Authorization:'Bearer '+s.access, Accept:'application/json'}});
+ if(r.status === 401) throw new Error('Sessão expirada — volta a ligar.');
+ if(!r.ok) throw new Error('Erro '+r.status+' ao ler os dados.');
+ return r.json();
+}
+async function sincronizarFonte(f){
+ const s = await sbToken(f);
+ const p = await sbGet(f, s, 'profiles?id=eq.'+encodeURIComponent(s.uid)+'&select=tenant');
+ const tenant = p[0] && p[0].tenant != null && p[0].tenant !== '' ? p[0].tenant : 1;
+ const st = await sbGet(f, s, 'app_state?id=eq.'+encodeURIComponent(tenant)+'&select=data');
+ let D = st[0] && st[0].data; if(typeof D === 'string') D = JSON.parse(D);
+ if(!D || typeof D !== 'object') throw new Error('Sem dados nesta conta.');
+ const eu = String(s.email||'').toLowerCase(), vend = String(s.vendedor||'').toLowerCase().trim();
+ const cli = id => { const c = (D.clients||[]).find(x => x.id === id); return c ? c.name : ''; };
+ const agenda = (Array.isArray(D.agenda)?D.agenda:[]).filter(e => !e.owner || String(e.owner).toLowerCase() === eu)
+  .map(e => ({titulo:e.titulo, date:e.date, allDay:e.allDay, startTime:e.startTime, local:e.local, repeat:e.repeat, repeatUntil:e.repeatUntil}));
+ const deals = !vend ? [] : (Array.isArray(D.deals)?D.deals:[]).filter(d => d.nextDate && !d.fromProj && !/^(ganho|projeto|concluido|perdido)$/.test(d.stage||'') && String(d.vendedor||'').toLowerCase().includes(vend))
+  .map(d => ({nextDate:d.nextDate, nextAction:d.nextAction, cliente:cli(d.clientId)}));
+ ls.set('hcaAgCache_'+f.id, JSON.stringify({at:new Date().toISOString(), agenda, deals}));
+}
+async function sincronizarAgendas(forcar){
+ const alvo = FONTES.filter(f => sbSess(f.id) && !agSync[f.id] && (forcar || !(lerJSON('hcaAgCache_'+f.id,{}).at > new Date(Date.now()-10*60000).toISOString())));
+ if(!alvo.length) return;
+ alvo.forEach(f => agSync[f.id] = true); if(atual === 'home') renderHome();
+ await Promise.all(alvo.map(async f => { try{ await sincronizarFonte(f); delete agErr[f.id]; }catch(e){ agErr[f.id] = e.message || 'Erro de ligação.'; } agSync[f.id] = false; }));
+ if(atual === 'home') renderHome();
+}
+function fontesHtml(){
+ return `<div class="fontes">${FONTES.map(f => {
+  const s = sbSess(f.id), c = lerJSON('hcaAgCache_'+f.id, null);
+  if(!s) return `<button class="btn sec fbtn" data-sblig="${f.id}">＋ Ligar ${esc(f.nome)}</button>`;
+  const est = agSync[f.id] ? 'a atualizar…' : agErr[f.id] ? `<span style="color:#c0392b">${esc(agErr[f.id])}</span>` : c ? 'atualizado às '+new Date(c.at).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}) : '';
+  return `<span class="fonte"><b>${esc(f.nome)}</b> · ${esc(s.email||'')} · ${est} <button class="lnk" data-sbupd="${f.id}">Atualizar</button><button class="lnk" data-sblig="${f.id}">Definições</button><button class="lnk" data-sbdes="${f.id}">Desligar</button></span>`;
+ }).join('')}</div>`;
+}
+function dialogoLigar(id){
+ const f = FONTES.find(x => x.id === id), s = sbSess(id) || {};
+ $('#dlgBox').innerHTML = `<h3>Ligar ${esc(f.nome)}</h3><p>Usa o mesmo email e palavra-passe com que entras na app. A palavra-passe não fica guardada; só a sessão. A ligação é só de leitura.</p>
+  <form id="sbForm" data-id="${id}" class="sbform">
+   <label>Email<input id="sbE" type="email" required value="${esc(s.email||'')}" autocomplete="username"></label>
+   <label>Palavra-passe<input id="sbP" type="password" ${s.access?'placeholder="(manter a sessão atual)"':'required'} autocomplete="current-password"></label>
+   <label>O teu nome como vendedor <span class="meta">(para trazer os próximos passos dos teus negócios; vazio = não trazer)</span><input id="sbV" value="${esc(s.vendedor!=null?s.vendedor:'Hugo')}"></label>
+   <div class="row"><button class="btn" type="submit">Ligar</button><button class="btn sec" type="button" data-sbfechar="1">Cancelar</button><span class="meta" id="sbMsg"></span></div>
+  </form>`;
+ $('#dlgBox').onclick = e => { if(e.target.closest('[data-sbfechar]')) $('#dlg').classList.remove('on'); };
+ $('#dlg').classList.add('on'); setTimeout(() => (s.email ? $('#sbP') : $('#sbE')).focus(), 50);
+}
+document.addEventListener('submit', async e => {
+ if(e.target.id !== 'sbForm') return; e.preventDefault();
+ const f = FONTES.find(x => x.id === e.target.dataset.id), msg = $('#sbMsg'), pass = $('#sbP').value, email = $('#sbE').value.trim();
+ msg.style.color = ''; msg.textContent = 'A ligar…';
+ try{
+  const ant = sbSess(f.id);
+  if(pass || !ant || (ant.email||'').toLowerCase() !== email.toLowerCase()) await sbAuth(f, {email, password:pass}, 'password');
+  const s = sbSess(f.id); s.vendedor = $('#sbV').value.trim(); ls.set('hcaSb_'+f.id, JSON.stringify(s));
+  await sincronizarFonte(f); delete agErr[f.id];
+  $('#dlg').classList.remove('on'); renderHome();
+ }catch(err){ msg.style.color = '#c0392b'; msg.textContent = err.message || 'Não foi possível ligar.'; }
+});
+
 function agendaItens(de, ate){
  const out = [], isoOk = d => /^\d{4}-\d\d-\d\d/.test(d||'');
  const add = o => { if(isoOk(o.data) && o.data.slice(0,10) >= de && o.data.slice(0,10) <= ate){ o.data = o.data.slice(0,10); out.push(o); } };
@@ -233,18 +339,15 @@ function agendaItens(de, ate){
  const D = lerJSON('hcg_v1',null);
  if(D && typeof D === 'object'){
   const cli = id => { const c = (D.clients||[]).find(x => x.id === id); return c ? c.name : ''; };
-  (Array.isArray(D.agenda)?D.agenda:[]).forEach(e => {
-   if(!isoOk(e.date)) return;
-   const base = {hora:e.allDay?'':(e.startTime||''), titulo:e.titulo||'(sem título)', local:e.local||'', origem:'Htennis', mod:'htennis'};
-   const rep = e.repeat && e.repeat !== 'none' ? e.repeat : null;
-   if(!rep){ add(Object.assign({data:e.date}, base)); return; }
-   const fim = isoOk(e.repeatUntil) ? e.repeatUntil : maisMeses(e.date,12);
-   let cur = e.date, n = 0;
-   while(cur <= fim && cur <= ate && n < 400){ n++; add(Object.assign({data:cur}, base));
-    cur = rep === 'semanal' ? maisDias(cur,7) : rep === 'quinzenal' ? maisDias(cur,14) : rep === 'mensal' ? maisMeses(e.date,n) : maisDias(fim,1); }
-  });
+  agAddEventos(add, D.agenda, {origem:'Htennis', mod:'htennis'}, ate);
   (Array.isArray(D.deals)?D.deals:[]).forEach(d => { if(isoOk(d.nextDate) && !/^(ganho|projeto|concluido|perdido)$/.test(d.stage||'')) add({data:d.nextDate, hora:'', titulo:(d.nextAction||'Follow-up') + (cli(d.clientId) ? ' — '+cli(d.clientId) : ''), local:'', origem:'Htennis', mod:'htennis'}); });
  }
+ FONTES.forEach(f => {
+  const c = lerJSON('hcaAgCache_'+f.id, null); if(!c || !sbSess(f.id)) return;
+  const base = {origem:f.nome, mod:'mobilwave', site:f.site};
+  agAddEventos(add, c.agenda, base, ate);
+  (c.deals||[]).forEach(d => { if(isoOk(d.nextDate)) add(Object.assign({data:d.nextDate, hora:'', titulo:(d.nextAction||'Follow-up') + (d.cliente ? ' — '+d.cliente : ''), local:''}, base)); });
+ });
  const P = lerJSON('participacoes_v1',null);
  if(P && Array.isArray(P.eventos)) P.eventos.forEach(e => { if(e.tipo === 'nota') add({data:e.data, hora:'', titulo:e.nota||'Evento', local:'', origem:'Participações', mod:'part'}); });
  return out.sort((a,b) => (a.data+(a.hora||'00:00')).localeCompare(b.data+(b.hora||'00:00')));
@@ -257,7 +360,7 @@ function agendaHtml(){
  itens.forEach(e => {
   if(e.data !== dia){ if(dia) h += '</div>'; dia = e.data; h += `<div class="agday"><div class="agd${e.data===hoje?' hoje':''}">${esc(nomeDia(e.data))}</div>`; }
   h += `<div class="agi"><span class="agh">${esc(e.hora||'Todo o dia')}</span><span class="agt"><b>${esc(e.titulo)}</b>${e.local?`<span class="meta"> · ${esc(e.local)}</span>`:''}</span>
-   ${e.mod?`<button class="tag agm" data-go="${e.mod}" title="Abrir módulo">${esc(e.origem)} →</button>`:`<span class="tag">${esc(e.origem)}</span>`}
+   ${e.mod?`<button class="tag agm" data-go="${e.mod}"${e.site?` data-site="${e.site}"`:''} title="Abrir">${esc(e.origem)} →</button>`:`<span class="tag">${esc(e.origem)}</span>`}
    ${e.id?`<button class="agx" data-agdel="${esc(e.id)}" title="Eliminar">✕</button>`:'<span class="agx"></span>'}</div>`;
  });
  if(dia) h += '</div>';
@@ -265,6 +368,7 @@ function agendaHtml(){
  return `<div class="agenda">
   <div class="row" style="justify-content:space-between"><div class="stabs"><button data-agv="0" class="${agPassadas?'':'on'}">Próximas</button><button data-agv="1" class="${agPassadas?'on':''}">Anteriores</button></div><span class="meta">${itens.length} ${itens.length===1?'marcação':'marcações'}</span></div>
   <div class="aglist">${h}</div>
+  ${fontesHtml()}
   <form class="agform" id="agForm"><input type="date" id="agD" value="${hoje}" required aria-label="Data"><input type="time" id="agH" aria-label="Hora"><input id="agT" placeholder="Nova marcação…" required aria-label="Título"><input id="agL" placeholder="Local (opcional)" aria-label="Local">
    <select id="agC" aria-label="Categoria"><option>Pessoal</option>${MODULES.map(m=>`<option>${esc(m.nome)}</option>`).join('')}</select><button class="btn" type="submit">Adicionar</button><span class="meta" style="color:#c0392b">${esc(agMsg)}</span></form>
  </div>`;
@@ -303,16 +407,7 @@ function renderHome(){
   return `<tr><td>${m.ic} ${esc(m.nome)}</td><td>${origem}</td><td class="n">${tam?fmtKB(tam):'—'}</td><td class="n">${uso[m.id]?fmtKB(uso[m.id]):'—'}</td></tr>`; }).join('');
  $('#v-home').innerHTML = `
   <h1>Hugocnamaral</h1><p class="sub">${esc(hoje.charAt(0).toUpperCase()+hoje.slice(1))}</p>
-  <div class="kpis">
-   <div class="kpi"><div class="l">Módulos</div><div class="v">${MODULES.length}</div><div class="s">${ativos} ativos · ${MODULES.length-ativos} por carregar</div></div>
-   <div class="kpi"><div class="l">Dados guardados</div><div class="v">${fmtKB(tot)}</div><div class="s">neste browser</div></div>
-   <div class="kpi"><div class="l">Backup ténis incluído</div><div class="v">${SEED ? esc(new Date(SEED.exportedAt).toLocaleDateString('pt-PT')) : '—'}</div><div class="s">${SEED ? Object.values(SEED.tenisPhotos||{}).reduce((s,a)=>s+a.length,0)+' fotografias' : ''}</div></div>
-  </div>
-  <h2>Agenda</h2>${agendaHtml()}
-  <h2>Módulos</h2><div class="cards">${cards}</div>
-  <h2>Estado</h2>
-  <div class="wrap"><table><thead><tr><th>Módulo</th><th>Origem</th><th style="text-align:right">Tamanho</th><th style="text-align:right">Dados no browser</th></tr></thead><tbody>${linhas}</tbody></table></div>
-  <p class="meta" style="margin-top:14px">Os dados de cada módulo ficam guardados neste browser. Usa a exportação de backup dentro de cada módulo para os levar para outro dispositivo.</p>`;
+  <h2>Agenda</h2>${agendaHtml()}`;
 }
 // ===== Módulo de sites online =====
 const siteAtual = {};
@@ -348,7 +443,10 @@ let alvoFicheiro = null;
 document.addEventListener('click', e => {
  const av = e.target.closest('[data-agv]'); if(av){ agPassadas = av.dataset.agv === '1'; renderHome(); return; }
  const ad = e.target.closest('[data-agdel]'); if(ad){ ls.set('hcaAgenda', JSON.stringify(agProprias().filter(x => x.id !== ad.dataset.agdel))); renderHome(); return; }
- const g = e.target.closest('[data-go]'); if(g){ go(g.dataset.go); return; }
+ const sl = e.target.closest('[data-sblig]'); if(sl){ dialogoLigar(sl.dataset.sblig); return; }
+ const su = e.target.closest('[data-sbupd]'); if(su){ sincronizarAgendas(true); return; }
+ const sd = e.target.closest('[data-sbdes]'); if(sd){ ls.del('hcaSb_'+sd.dataset.sbdes); ls.del('hcaAgCache_'+sd.dataset.sbdes); delete agErr[sd.dataset.sbdes]; renderHome(); return; }
+ const g = e.target.closest('[data-go]'); if(g){ if(g.dataset.site){ siteAtual[g.dataset.go] = g.dataset.site; ls.set('hcaSite_'+g.dataset.go, g.dataset.site); } go(g.dataset.go); return; }
  const l = e.target.closest('[data-load]'); if(l){ alvoFicheiro = l.dataset.load; $('#fileIn').value = ''; $('#fileIn').click(); }
 });
 $('#fileIn').addEventListener('change', async e => {
@@ -359,6 +457,12 @@ $('#fileIn').addEventListener('change', async e => {
  try{ await DB.put(id, rec); }catch(err){}
  slotCache[id] = rec; recarregar(id); go(id);
 });
+// barra lateral: esconde-se depois de escolher um módulo e volta quando o rato chega à margem esquerda
+$('#nav').addEventListener('click', e => { if(e.target.closest('[data-go]')){ document.body.classList.add('autohide'); document.body.classList.remove('peek'); if(document.activeElement) document.activeElement.blur(); } });
+$('#edge').addEventListener('mouseenter', () => document.body.classList.add('peek'));
+$('#side').addEventListener('mouseleave', () => document.body.classList.remove('peek'));
+$('#side').addEventListener('focusin', () => document.body.classList.add('peek'));
+$('#side').addEventListener('focusout', e => { if(!$('#side').contains(e.relatedTarget)) document.body.classList.remove('peek'); });
 window.addEventListener('hashchange', () => { const id = location.hash.slice(1) || 'home'; if(id !== atual) go(id); });
 (async function init(){ await loadSlots(); go(location.hash.slice(1) || 'home'); })();
 </script>
